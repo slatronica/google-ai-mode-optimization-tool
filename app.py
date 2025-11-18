@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class WordPressQueryFanOutAnalyzer:
     """Analyze WordPress sites for Google AI Mode query fan-out optimization"""
     
-    def __init__(self, site_url: str, claude_api_key: str, claude_model: str = "claude-3-5-sonnet-20240620"):
+    def __init__(self, site_url: str, claude_api_key: str, claude_model: str = "claude-sonnet-4-5"):
         self.site_url = site_url.rstrip('/')
         self.api_base = f"{self.site_url}/wp-json/wp/v2"
         self.claude = anthropic.Anthropic(api_key=claude_api_key)
@@ -618,8 +618,8 @@ def main():
     parser.add_argument('claude_api_key', help='Claude API key')
     parser.add_argument('--output', default='seo_report.json', help='Output file name')
     parser.add_argument('--visualize', action='store_true', help='Generate graph visualization')
-    parser.add_argument('--model', default='claude-3-5-sonnet-20240620', 
-                       help='Claude model to use (default: claude-3-5-sonnet-20240620). Other options: claude-3-opus-20240229, claude-3-haiku-20240307, claude-3-5-haiku-20241022')
+    parser.add_argument('--model', default='claude-sonnet-4-5', 
+                       help='Claude model to use (default: claude-sonnet-4-5). Other options: claude-3-opus-20240229, claude-3-haiku-20240307, claude-3-5-haiku-20241022')
     
     args = parser.parse_args()
     
