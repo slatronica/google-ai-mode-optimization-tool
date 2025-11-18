@@ -32,17 +32,43 @@ class WordPressQueryFanOutAnalyzer:
         self.content_cache = {}
         self.tfidf_vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
         
+        # Set up session with proper headers to avoid Cloudflare/bot blocking
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
+        
     def test_api_connection(self) -> bool:
         """Test if WordPress REST API is accessible"""
         try:
             test_url = f"{self.api_base}/posts"
             logger.info(f"Testing API connection to {test_url}")
-            response = requests.get(test_url, params={'per_page': 1}, timeout=10)
+            response = self.session.get(test_url, params={'per_page': 1}, timeout=10)
             logger.info(f"API test response status: {response.status_code}")
             
             if response.status_code == 200:
                 logger.info("✓ WordPress REST API is accessible")
                 return True
+            elif response.status_code == 403:
+                logger.error(f"✗ REST API access forbidden (403). This is often caused by:")
+                logger.error(f"  1. Cloudflare bot protection blocking requests")
+                logger.error(f"  2. WordPress security plugins (e.g., Wordfence, iThemes Security)")
+                logger.error(f"  3. Server-level restrictions")
+                logger.error(f"")
+                logger.error(f"Solutions:")
+                logger.error(f"  - Whitelist your server IP in Cloudflare/security plugins")
+                logger.error(f"  - Disable REST API restrictions in security plugins")
+                logger.error(f"  - Check if {test_url} works in a browser")
+                logger.error(f"  - Consider using authentication if required")
+                if 'cloudflare' in response.text.lower() or '__CF$cv$params' in response.text:
+                    logger.error(f"  - Cloudflare challenge detected - may need to solve challenge or whitelist IP")
+                logger.error(f"Response preview: {response.text[:300]}")
+                return False
             elif response.status_code == 404:
                 logger.error(f"✗ REST API endpoint not found. Please verify:")
                 logger.error(f"  1. WordPress REST API is enabled")
@@ -95,7 +121,7 @@ class WordPressQueryFanOutAnalyzer:
                 params = {'per_page': per_page, 'page': page, '_embed': True}
                 logger.debug(f"Requesting: {url} with params: {params}")
                 
-                response = requests.get(url, params=params, timeout=30)
+                response = self.session.get(url, params=params, timeout=30)
                 
                 logger.debug(f"Response status: {response.status_code}")
                 
@@ -108,6 +134,11 @@ class WordPressQueryFanOutAnalyzer:
                     posts.extend(batch)
                     page += 1
                     time.sleep(0.5)  # Rate limiting
+                elif response.status_code == 403:
+                    logger.error(f"Access forbidden (403) when fetching posts. Check security settings.")
+                    if page == 1:  # Only show detailed error on first page
+                        logger.error(f"This usually means Cloudflare or security plugins are blocking access.")
+                    break
                 elif response.status_code == 404:
                     logger.warning(f"Posts endpoint not found (404). Check if REST API is enabled at {url}")
                     logger.warning(f"Response: {response.text[:200]}")
@@ -144,7 +175,7 @@ class WordPressQueryFanOutAnalyzer:
                 params = {'per_page': per_page, 'page': page, '_embed': True}
                 logger.debug(f"Requesting: {url} with params: {params}")
                 
-                response = requests.get(url, params=params, timeout=30)
+                response = self.session.get(url, params=params, timeout=30)
                 
                 logger.debug(f"Response status: {response.status_code}")
                 
@@ -157,6 +188,11 @@ class WordPressQueryFanOutAnalyzer:
                     pages.extend(batch)
                     page += 1
                     time.sleep(0.5)
+                elif response.status_code == 403:
+                    logger.error(f"Access forbidden (403) when fetching pages. Check security settings.")
+                    if page == 1:  # Only show detailed error on first page
+                        logger.error(f"This usually means Cloudflare or security plugins are blocking access.")
+                    break
                 elif response.status_code == 404:
                     logger.warning(f"Pages endpoint not found (404). Check if REST API is enabled at {url}")
                     logger.warning(f"Response: {response.text[:200]}")
@@ -183,7 +219,7 @@ class WordPressQueryFanOutAnalyzer:
     def fetch_categories(self) -> List[Dict]:
         """Fetch all categories"""
         try:
-            response = requests.get(f"{self.api_base}/categories", params={'per_page': 100})
+            response = self.session.get(f"{self.api_base}/categories", params={'per_page': 100}, timeout=30)
             return response.json() if response.status_code == 200 else []
         except:
             return []
@@ -191,7 +227,7 @@ class WordPressQueryFanOutAnalyzer:
     def fetch_tags(self) -> List[Dict]:
         """Fetch all tags"""
         try:
-            response = requests.get(f"{self.api_base}/tags", params={'per_page': 100})
+            response = self.session.get(f"{self.api_base}/tags", params={'per_page': 100}, timeout=30)
             return response.json() if response.status_code == 200 else []
         except:
             return []
@@ -199,7 +235,7 @@ class WordPressQueryFanOutAnalyzer:
     def fetch_media_info(self) -> List[Dict]:
         """Fetch media information"""
         try:
-            response = requests.get(f"{self.api_base}/media", params={'per_page': 50})
+            response = self.session.get(f"{self.api_base}/media", params={'per_page': 50}, timeout=30)
             return response.json() if response.status_code == 200 else []
         except:
             return []
