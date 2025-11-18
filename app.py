@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 class WordPressQueryFanOutAnalyzer:
     """Analyze WordPress sites for Google AI Mode query fan-out optimization"""
     
-    def __init__(self, site_url: str, claude_api_key: str):
+    def __init__(self, site_url: str, claude_api_key: str, claude_model: str = "claude-3-5-sonnet-20240620"):
         self.site_url = site_url.rstrip('/')
         self.api_base = f"{self.site_url}/wp-json/wp/v2"
         self.claude = anthropic.Anthropic(api_key=claude_api_key)
+        self.claude_model = claude_model
         self.content_graph = nx.DiGraph()
         self.query_patterns = defaultdict(list)
         self.content_cache = {}
@@ -252,7 +253,7 @@ Provide analysis in JSON format with:
 
         try:
             response = self.claude.messages.create(
-                model="claude-3-5-sonnet-20241022",  # Updated to valid model name
+                model=self.claude_model,
                 max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -617,11 +618,13 @@ def main():
     parser.add_argument('claude_api_key', help='Claude API key')
     parser.add_argument('--output', default='seo_report.json', help='Output file name')
     parser.add_argument('--visualize', action='store_true', help='Generate graph visualization')
+    parser.add_argument('--model', default='claude-3-5-sonnet-20240620', 
+                       help='Claude model to use (default: claude-3-5-sonnet-20240620). Other options: claude-3-opus-20240229, claude-3-haiku-20240307, claude-3-5-haiku-20241022')
     
     args = parser.parse_args()
     
     # Initialize analyzer
-    analyzer = WordPressQueryFanOutAnalyzer(args.site_url, args.claude_api_key)
+    analyzer = WordPressQueryFanOutAnalyzer(args.site_url, args.claude_api_key, args.model)
     
     # Generate report
     report = analyzer.generate_optimization_report()
