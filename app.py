@@ -252,13 +252,27 @@ Provide analysis in JSON format with:
 
         try:
             response = self.claude.messages.create(
-                model="claude-opus-4-20250514",
+                model="claude-3-5-sonnet-20241022",  # Updated to valid model name
                 max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}]
             )
             
-            # Parse Claude's response
-            analysis = self.parse_claude_response(response.content[0].text)
+            # Parse Claude's response - handle both old and new response formats
+            response_text = ""
+            if hasattr(response, 'content') and len(response.content) > 0:
+                # Handle text content blocks
+                if hasattr(response.content[0], 'text'):
+                    response_text = response.content[0].text
+                elif isinstance(response.content[0], dict) and 'text' in response.content[0]:
+                    response_text = response.content[0]['text']
+                else:
+                    # Fallback: try to get text from response directly
+                    response_text = str(response.content[0])
+            else:
+                logger.warning("Unexpected response format from Claude API")
+                return patterns
+            
+            analysis = self.parse_claude_response(response_text)
             patterns.update(analysis)
             
         except Exception as e:
