@@ -311,14 +311,18 @@ class WordPressQueryFanOutAnalyzer:
     
     def build_internal_link_edges(self):
         """Extract and build edges from internal links"""
-        for node_id, data in self.content_graph.nodes(data=True):
+        # Convert to list first to avoid "dictionary changed size during iteration" error
+        nodes_list = list(self.content_graph.nodes(data=True))
+        for node_id, data in nodes_list:
             if 'content' in data:
                 # Extract internal links
                 links = re.findall(rf'{self.site_url}/[^"\'>\s]+', data['content'])
                 
+                # Convert target nodes to list as well
+                target_nodes_list = list(self.content_graph.nodes(data=True))
                 for link in links:
                     # Find the target node
-                    for target_id, target_data in self.content_graph.nodes(data=True):
+                    for target_id, target_data in target_nodes_list:
                         if target_data.get('url') == link:
                             self.content_graph.add_edge(node_id, target_id, type='internal_link')
                             break
@@ -352,8 +356,10 @@ class WordPressQueryFanOutAnalyzer:
                     logger.warning(f"Error adding tag node: {e}, tag data: {tag}")
         
         # Connect posts to categories and tags
+        # Convert to list first to avoid "dictionary changed size during iteration" error
         try:
-            for node_id, data in self.content_graph.nodes(data=True):
+            nodes_list = list(self.content_graph.nodes(data=True))
+            for node_id, data in nodes_list:
                 # Skip if node doesn't have type or if it's not a post
                 if not data or data.get('type') != 'post':
                     continue
@@ -361,14 +367,20 @@ class WordPressQueryFanOutAnalyzer:
                 # Connect to categories
                 for cat_id in data.get('categories', []):
                     try:
-                        self.content_graph.add_edge(node_id, f"cat_{cat_id}", type='categorized_as')
+                        cat_node_id = f"cat_{cat_id}"
+                        # Only add edge if category node exists
+                        if self.content_graph.has_node(cat_node_id):
+                            self.content_graph.add_edge(node_id, cat_node_id, type='categorized_as')
                     except Exception as e:
                         logger.debug(f"Could not connect post {node_id} to category {cat_id}: {e}")
                 
                 # Connect to tags
                 for tag_id in data.get('tags', []):
                     try:
-                        self.content_graph.add_edge(node_id, f"tag_{tag_id}", type='tagged_as')
+                        tag_node_id = f"tag_{tag_id}"
+                        # Only add edge if tag node exists
+                        if self.content_graph.has_node(tag_node_id):
+                            self.content_graph.add_edge(node_id, tag_node_id, type='tagged_as')
                     except Exception as e:
                         logger.debug(f"Could not connect post {node_id} to tag {tag_id}: {e}")
         except Exception as e:
