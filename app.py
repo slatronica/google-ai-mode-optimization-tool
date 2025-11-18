@@ -48,13 +48,13 @@ class WordPressQueryFanOutAnalyzer:
         
         return report
     
-    def export_report(self, report: dict, filename: str = 'seo_analysis_report.json'):
+    def export_report(self, report: dict, filename: str = 'seo_analysis_report.json', reports_dir: str = 'reports'):
         """Export report to JSON file"""
-        self.report_generator.export_report(report, filename)
+        return self.report_generator.export_report(report, filename, reports_dir)
     
-    def visualize_content_graph(self, output_file: str = 'content_graph.html'):
+    def visualize_content_graph(self, output_file: str = 'content_graph.html', reports_dir: str = 'reports'):
         """Create an interactive visualization of the content graph"""
-        self.report_generator.visualize_content_graph(self.content_graph, output_file)
+        return self.report_generator.visualize_content_graph(self.content_graph, output_file, reports_dir)
 
 
 def main():
@@ -83,12 +83,13 @@ def main():
     # Generate report
     report = analyzer.generate_optimization_report()
     
-    # Export report
-    analyzer.export_report(report, args.output)
+    # Export report (will be saved in reports/ directory with timestamp)
+    report_path = analyzer.export_report(report, args.output)
     
-    # Generate visualization if requested
+    # Generate visualization if requested (will be saved in reports/ directory with timestamp)
+    viz_path = None
     if args.visualize:
-        analyzer.visualize_content_graph()
+        viz_path = analyzer.visualize_content_graph()
     
     # Print summary
     print("\n" + "="*50)
@@ -100,7 +101,9 @@ def main():
     print(f"Potential Hub Pages: {report['summary']['hub_pages']}")
     print(f"Semantic Clusters: {report['summary']['semantic_clusters']}")
     print(f"\nTop Recommendations: {len(report['recommendations'])}")
-    print(f"Report saved to: {args.output}")
+    print(f"Report saved to: {report_path}")
+    if viz_path:
+        print(f"Visualization saved to: {viz_path}")
     
     if report['recommendations']:
         print("\nTop 3 Immediate Actions:")

@@ -1,6 +1,7 @@
 """Report generation and export"""
 import json
 import logging
+import os
 from typing import List, Dict
 from datetime import datetime
 
@@ -118,15 +119,48 @@ class ReportGenerator:
         
         return action_plan
     
-    def export_report(self, report: Dict, filename: str = 'seo_analysis_report.json'):
-        """Export report to JSON file"""
-        with open(filename, 'w', encoding='utf-8') as f:
+    def export_report(self, report: Dict, filename: str = 'seo_analysis_report.json', reports_dir: str = 'reports'):
+        """Export report to JSON file in reports directory with timestamp"""
+        # Create reports directory if it doesn't exist
+        os.makedirs(reports_dir, exist_ok=True)
+        
+        # Extract base name and extension
+        base_name, ext = os.path.splitext(filename)
+        if not ext:
+            ext = '.json'
+        
+        # Add timestamp to filename (format: YYYYMMDD_HHMMSS)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamped_filename = f"{base_name}_{timestamp}{ext}"
+        
+        # Create full path
+        filepath = os.path.join(reports_dir, timestamped_filename)
+        
+        # Export report
+        with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
-        logger.info(f"Report exported to {filename}")
+        logger.info(f"Report exported to {filepath}")
+        
+        return filepath
     
-    def visualize_content_graph(self, content_graph, output_file: str = 'content_graph.html'):
+    def visualize_content_graph(self, content_graph, output_file: str = 'content_graph.html', reports_dir: str = 'reports'):
         """Create an interactive visualization of the content graph"""
         import pyvis.network as net
+        
+        # Create reports directory if it doesn't exist
+        os.makedirs(reports_dir, exist_ok=True)
+        
+        # Extract base name and extension
+        base_name, ext = os.path.splitext(output_file)
+        if not ext:
+            ext = '.html'
+        
+        # Add timestamp to filename (format: YYYYMMDD_HHMMSS)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamped_filename = f"{base_name}_{timestamp}{ext}"
+        
+        # Create full path
+        filepath = os.path.join(reports_dir, timestamped_filename)
         
         # Create pyvis network
         nt = net.Network(height='750px', width='100%', bgcolor='#222222', font_color='white')
@@ -153,6 +187,8 @@ class ReportGenerator:
             nt.add_edge(source, target)
         
         # Generate HTML
-        nt.save_graph(output_file)
-        logger.info(f"Content graph visualization saved to {output_file}")
+        nt.save_graph(filepath)
+        logger.info(f"Content graph visualization saved to {filepath}")
+        
+        return filepath
 
