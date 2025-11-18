@@ -134,6 +134,14 @@ class WordPressQueryFanOutAnalyzer:
                     posts.extend(batch)
                     page += 1
                     time.sleep(0.5)  # Rate limiting
+                elif response.status_code == 400:
+                    # WordPress returns 400 when page number exceeds available pages
+                    response_data = response.json()
+                    if 'rest_post_invalid_page_number' in response_data.get('code', ''):
+                        logger.info("Reached end of posts (all pages fetched)")
+                    else:
+                        logger.warning(f"Bad request (400) when fetching posts: {response_data}")
+                    break
                 elif response.status_code == 403:
                     logger.error(f"Access forbidden (403) when fetching posts. Check security settings.")
                     if page == 1:  # Only show detailed error on first page
@@ -188,6 +196,14 @@ class WordPressQueryFanOutAnalyzer:
                     pages.extend(batch)
                     page += 1
                     time.sleep(0.5)
+                elif response.status_code == 400:
+                    # WordPress returns 400 when page number exceeds available pages
+                    response_data = response.json()
+                    if 'rest_post_invalid_page_number' in response_data.get('code', ''):
+                        logger.info("Reached end of pages (all pages fetched)")
+                    else:
+                        logger.warning(f"Bad request (400) when fetching pages: {response_data}")
+                    break
                 elif response.status_code == 403:
                     logger.error(f"Access forbidden (403) when fetching pages. Check security settings.")
                     if page == 1:  # Only show detailed error on first page
@@ -245,30 +261,38 @@ class WordPressQueryFanOutAnalyzer:
         logger.info("Building content graph...")
         
         # Add posts as nodes
-        for post in content['posts']:
-            self.content_graph.add_node(
-                post['id'],
-                type='post',
-                title=post['title']['rendered'],
-                url=post['link'],
-                content=self.clean_html(post['content']['rendered']),
-                excerpt=self.clean_html(post['excerpt']['rendered']),
-                categories=post.get('categories', []),
-                tags=post.get('tags', []),
-                date=post['date']
-            )
+        for post in content.get('posts', []):
+            try:
+                self.content_graph.add_node(
+                    post['id'],
+                    type='post',
+                    title=post.get('title', {}).get('rendered', ''),
+                    url=post.get('link', ''),
+                    content=self.clean_html(post.get('content', {}).get('rendered', '')),
+                    excerpt=self.clean_html(post.get('excerpt', {}).get('rendered', '')),
+                    categories=post.get('categories', []),
+                    tags=post.get('tags', []),
+                    date=post.get('date', '')
+                )
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error adding post node: {e}, post ID: {post.get('id', 'unknown')}")
+                continue
             
         # Add pages as nodes
-        for page in content['pages']:
-            self.content_graph.add_node(
-                f"page_{page['id']}",
-                type='page',
-                title=page['title']['rendered'],
-                url=page['link'],
-                content=self.clean_html(page['content']['rendered']),
-                parent=page.get('parent', 0),
-                date=page['date']
-            )
+        for page in content.get('pages', []):
+            try:
+                self.content_graph.add_node(
+                    f"page_{page['id']}",
+                    type='page',
+                    title=page.get('title', {}).get('rendered', ''),
+                    url=page.get('link', ''),
+                    content=self.clean_html(page.get('content', {}).get('rendered', '')),
+                    parent=page.get('parent', 0),
+                    date=page.get('date', '')
+                )
+            except (KeyError, TypeError) as e:
+                logger.warning(f"Error adding page node: {e}, page ID: {page.get('id', 'unknown')}")
+                continue
         
         # Build edges based on internal links
         self.build_internal_link_edges()
@@ -302,31 +326,54 @@ class WordPressQueryFanOutAnalyzer:
     def build_taxonomy_edges(self, content: Dict):
         """Build edges based on categories and tags"""
         # Create category nodes
-        for cat in content['categories']:
-            self.content_graph.add_node(
-                f"cat_{cat['id']}",
-                type='category',
-                name=cat['name'],
-                slug=cat['slug']
-            )
+        if content.get('categories'):
+            for cat in content['categories']:
+                try:
+                    self.content_graph.add_node(
+                        f"cat_{cat['id']}",
+                        type='category',
+                        name=cat.get('name', ''),
+                        slug=cat.get('slug', '')
+                    )
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Error adding category node: {e}, category data: {cat}")
         
         # Create tag nodes
-        for tag in content['tags']:
-            self.content_graph.add_node(
-                f"tag_{tag['id']}",
-                type='tag',
-                name=tag['name'],
-                slug=tag['slug']
-            )
+        if content.get('tags'):
+            for tag in content['tags']:
+                try:
+                    self.content_graph.add_node(
+                        f"tag_{tag['id']}",
+                        type='tag',
+                        name=tag.get('name', ''),
+                        slug=tag.get('slug', '')
+                    )
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Error adding tag node: {e}, tag data: {tag}")
         
         # Connect posts to categories and tags
-        for node_id, data in self.content_graph.nodes(data=True):
-            if data['type'] == 'post':
-                for cat_id in data.get('categories', []):
-                    self.content_graph.add_edge(node_id, f"cat_{cat_id}", type='categorized_as')
+        try:
+            for node_id, data in self.content_graph.nodes(data=True):
+                # Skip if node doesn't have type or if it's not a post
+                if not data or data.get('type') != 'post':
+                    continue
                 
+                # Connect to categories
+                for cat_id in data.get('categories', []):
+                    try:
+                        self.content_graph.add_edge(node_id, f"cat_{cat_id}", type='categorized_as')
+                    except Exception as e:
+                        logger.debug(f"Could not connect post {node_id} to category {cat_id}: {e}")
+                
+                # Connect to tags
                 for tag_id in data.get('tags', []):
-                    self.content_graph.add_edge(node_id, f"tag_{tag_id}", type='tagged_as')
+                    try:
+                        self.content_graph.add_edge(node_id, f"tag_{tag_id}", type='tagged_as')
+                    except Exception as e:
+                        logger.debug(f"Could not connect post {node_id} to tag {tag_id}: {e}")
+        except Exception as e:
+            logger.error(f"Error building taxonomy edges: {e}", exc_info=True)
+            raise
     
     def analyze_query_patterns(self) -> Dict:
         """Analyze content for complex query patterns using Claude"""
