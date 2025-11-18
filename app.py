@@ -23,6 +23,8 @@ class WordPressQueryFanOutAnalyzer:
     def __init__(self, site_url: str, claude_api_key: str, claude_model: str = "claude-sonnet-4-5"):
         self.site_url = site_url.rstrip('/')
         self.api_base = f"{self.site_url}/wp-json/wp/v2"
+        logger.info(f"Initialized analyzer for {self.site_url}")
+        logger.info(f"REST API base URL: {self.api_base}")
         self.claude = anthropic.Anthropic(api_key=claude_api_key)
         self.claude_model = claude_model
         self.content_graph = nx.DiGraph()
@@ -30,9 +32,44 @@ class WordPressQueryFanOutAnalyzer:
         self.content_cache = {}
         self.tfidf_vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
         
+    def test_api_connection(self) -> bool:
+        """Test if WordPress REST API is accessible"""
+        try:
+            test_url = f"{self.api_base}/posts"
+            logger.info(f"Testing API connection to {test_url}")
+            response = requests.get(test_url, params={'per_page': 1}, timeout=10)
+            logger.info(f"API test response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                logger.info("✓ WordPress REST API is accessible")
+                return True
+            elif response.status_code == 404:
+                logger.error(f"✗ REST API endpoint not found. Please verify:")
+                logger.error(f"  1. WordPress REST API is enabled")
+                logger.error(f"  2. The URL {test_url} is correct")
+                logger.error(f"  3. Try accessing it in a browser: {test_url}")
+                logger.error(f"Response: {response.text[:500]}")
+                return False
+            elif response.status_code == 401:
+                logger.error("✗ REST API requires authentication")
+                logger.error(f"Response: {response.text[:500]}")
+                return False
+            else:
+                logger.warning(f"API returned status {response.status_code}")
+                logger.warning(f"Response: {response.text[:500]}")
+                return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"✗ Failed to connect to REST API: {e}")
+            logger.error(f"Please verify the site URL is correct and accessible")
+            return False
+    
     def fetch_all_content(self) -> Dict:
         """Fetch all content from WordPress site"""
         logger.info(f"Fetching content from {self.site_url}")
+        
+        # Test API connection first
+        if not self.test_api_connection():
+            logger.warning("API connection test failed, but continuing anyway...")
         
         content = {
             'posts': self.fetch_posts(),
@@ -50,27 +87,48 @@ class WordPressQueryFanOutAnalyzer:
         posts = []
         page = 1
         
+        logger.info(f"Fetching posts from {self.api_base}/posts")
+        
         while True:
             try:
-                response = requests.get(
-                    f"{self.api_base}/posts",
-                    params={'per_page': per_page, 'page': page, '_embed': True}
-                )
+                url = f"{self.api_base}/posts"
+                params = {'per_page': per_page, 'page': page, '_embed': True}
+                logger.debug(f"Requesting: {url} with params: {params}")
+                
+                response = requests.get(url, params=params, timeout=30)
+                
+                logger.debug(f"Response status: {response.status_code}")
                 
                 if response.status_code == 200:
                     batch = response.json()
+                    logger.info(f"Page {page}: Received {len(batch)} posts")
                     if not batch:
+                        logger.info("No more posts to fetch")
                         break
                     posts.extend(batch)
                     page += 1
                     time.sleep(0.5)  # Rate limiting
+                elif response.status_code == 404:
+                    logger.warning(f"Posts endpoint not found (404). Check if REST API is enabled at {url}")
+                    logger.warning(f"Response: {response.text[:200]}")
+                    break
+                elif response.status_code == 401:
+                    logger.warning(f"Unauthorized (401). REST API may require authentication.")
+                    logger.warning(f"Response: {response.text[:200]}")
+                    break
                 else:
+                    logger.warning(f"Unexpected status code {response.status_code} when fetching posts")
+                    logger.warning(f"Response: {response.text[:200]}")
                     break
                     
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error fetching posts: {e}")
+                break
             except Exception as e:
-                logger.error(f"Error fetching posts: {e}")
+                logger.error(f"Error fetching posts: {e}", exc_info=True)
                 break
                 
+        logger.info(f"Total posts fetched: {len(posts)}")
         return posts
     
     def fetch_pages(self, per_page=100) -> List[Dict]:
@@ -78,27 +136,48 @@ class WordPressQueryFanOutAnalyzer:
         pages = []
         page = 1
         
+        logger.info(f"Fetching pages from {self.api_base}/pages")
+        
         while True:
             try:
-                response = requests.get(
-                    f"{self.api_base}/pages",
-                    params={'per_page': per_page, 'page': page, '_embed': True}
-                )
+                url = f"{self.api_base}/pages"
+                params = {'per_page': per_page, 'page': page, '_embed': True}
+                logger.debug(f"Requesting: {url} with params: {params}")
+                
+                response = requests.get(url, params=params, timeout=30)
+                
+                logger.debug(f"Response status: {response.status_code}")
                 
                 if response.status_code == 200:
                     batch = response.json()
+                    logger.info(f"Page {page}: Received {len(batch)} pages")
                     if not batch:
+                        logger.info("No more pages to fetch")
                         break
                     pages.extend(batch)
                     page += 1
                     time.sleep(0.5)
+                elif response.status_code == 404:
+                    logger.warning(f"Pages endpoint not found (404). Check if REST API is enabled at {url}")
+                    logger.warning(f"Response: {response.text[:200]}")
+                    break
+                elif response.status_code == 401:
+                    logger.warning(f"Unauthorized (401). REST API may require authentication.")
+                    logger.warning(f"Response: {response.text[:200]}")
+                    break
                 else:
+                    logger.warning(f"Unexpected status code {response.status_code} when fetching pages")
+                    logger.warning(f"Response: {response.text[:200]}")
                     break
                     
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request error fetching pages: {e}")
+                break
             except Exception as e:
-                logger.error(f"Error fetching pages: {e}")
+                logger.error(f"Error fetching pages: {e}", exc_info=True)
                 break
                 
+        logger.info(f"Total pages fetched: {len(pages)}")
         return pages
     
     def fetch_categories(self) -> List[Dict]:
@@ -620,8 +699,14 @@ def main():
     parser.add_argument('--visualize', action='store_true', help='Generate graph visualization')
     parser.add_argument('--model', default='claude-sonnet-4-5', 
                        help='Claude model to use (default: claude-sonnet-4-5). Other options: claude-3-opus-20240229, claude-3-haiku-20240307, claude-3-5-haiku-20241022')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     
     args = parser.parse_args()
+    
+    # Set logging level based on debug flag
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     
     # Initialize analyzer
     analyzer = WordPressQueryFanOutAnalyzer(args.site_url, args.claude_api_key, args.model)
