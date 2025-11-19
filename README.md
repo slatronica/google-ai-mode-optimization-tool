@@ -4,13 +4,15 @@ A comprehensive tool that analyzes WordPress sites for Google AI Mode optimizati
 
 ## Features
 
-- **WordPress Content Crawling**: Fetches all posts, pages, categories, and tags via wp-json API
+- **WordPress Content Crawling**: Fetches all posts, pages, categories, and tags via WordPress REST API or sitemap.xml
+- **Sitemap Support**: Can crawl via sitemap.xml when REST API is blocked or unavailable (handles nested sitemaps)
 - **Content Graph Construction**: Builds a knowledge graph of your site's content and internal links
 - **Query Pattern Analysis**: Uses Claude AI to identify complex queries and decomposition opportunities
 - **Semantic Clustering**: Groups related content using TF-IDF vectorization
 - **Multi-Source Optimization**: Identifies content that can serve multiple Google source types
 - **Actionable Recommendations**: Provides specific steps to optimize for query fan-out
 - **Visual Graph Export**: Creates interactive visualization of your content network
+- **Timestamped Reports**: All reports are saved in `reports/` directory with timestamps to prevent overwriting
 
 ## Installation
 
@@ -22,21 +24,61 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (REST API Mode)
 
 ```bash
 python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY
 ```
 
-### With Options
+### Sitemap Mode
+
+When the WordPress REST API is blocked or unavailable, use sitemap mode:
 
 ```bash
-# Custom output file
+# Use default sitemap.xml
+python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --sitemap
+
+# Specify custom sitemap URL
+python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --sitemap https://yoursite.com/custom-sitemap.xml
+
+# Or use relative path
+python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --sitemap sitemap-index.xml
+```
+
+### All Options
+
+```bash
+# Custom output file name (will be timestamped automatically)
 python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --output my_report.json
 
-# With visualization
+# Generate visualization
 python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --visualize
+
+# Use different Claude model
+python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --model claude-3-opus-20240229
+
+# Enable debug logging
+python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --debug
+
+# Combine options
+python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --sitemap --output site_analysis.json --visualize --debug
 ```
+
+### Command Line Arguments
+
+- `site_url` (required): WordPress site URL to analyze
+- `claude_api_key` (required): Your Claude API key
+- `--output`: Output file name (default: `seo_report.json`)
+  - Files are automatically saved in `reports/` directory with timestamps
+  - Example: `reports/seo_report_20241118_143022.json`
+- `--sitemap`: Use sitemap crawling instead of REST API
+  - Optional: specify sitemap URL (default: `sitemap.xml`)
+  - Handles nested sitemaps automatically
+- `--visualize`: Generate interactive HTML graph visualization
+  - Saved in `reports/` directory with timestamp
+- `--model`: Claude model to use (default: `claude-sonnet-4-5`)
+  - Options: `claude-3-opus-20240229`, `claude-3-haiku-20240307`, `claude-3-5-haiku-20241022`
+- `--debug`: Enable verbose debug logging
 
 ## Getting Your Claude API Key
 
@@ -48,7 +90,10 @@ python app.py https://yourwordpresssite.com YOUR_CLAUDE_API_KEY --visualize
 ## What the Analyzer Does
 
 ### 1. Content Fetching
-- Retrieves all published posts and pages
+- **REST API Mode**: Retrieves all published posts and pages via WordPress REST API
+- **Sitemap Mode**: Crawls sitemap.xml to discover all URLs, then fetches and parses HTML content
+  - Automatically handles nested sitemaps (sitemap index files)
+  - Extracts title, content, categories, and tags from HTML
 - Fetches categories, tags, and media information
 - Respects rate limits to avoid overloading your server
 
@@ -138,6 +183,15 @@ Pages with high potential to serve as central nodes in query paths. Optimizing t
 ### Semantic Clusters
 Groups of related content that should be better interconnected to support query fan-out.
 
+## Output Files
+
+All reports and visualizations are automatically saved in the `reports/` directory with timestamps:
+
+- **JSON Reports**: `reports/[filename]_YYYYMMDD_HHMMSS.json`
+- **HTML Visualizations**: `reports/content_graph_YYYYMMDD_HHMMSS.html`
+
+This ensures previous reports are never overwritten and you can track changes over time.
+
 ## Visualization
 
 If you use the `--visualize` flag, the tool generates an interactive HTML graph showing:
@@ -147,6 +201,8 @@ If you use the `--visualize` flag, the tool generates an interactive HTML graph 
 - Red nodes: Tags
 - Node size: Based on number of connections
 - Edges: Internal links and relationships
+
+The visualization is saved in the `reports/` directory with a timestamp.
 
 ## Best Practices
 
@@ -158,6 +214,17 @@ If you use the `--visualize` flag, the tool generates an interactive HTML graph 
 
 ## Troubleshooting
 
+### REST API Blocked (403 Forbidden)
+If you get a 403 error when using REST API mode, try sitemap mode instead:
+```bash
+python app.py https://yoursite.com YOUR_API_KEY --sitemap
+```
+
+Common causes:
+- Cloudflare bot protection
+- WordPress security plugins (Wordfence, iThemes Security)
+- Server-level restrictions
+
 ### API Rate Limits
 If you hit rate limits, the tool automatically slows down. For large sites, the analysis may take 10-20 minutes.
 
@@ -165,7 +232,12 @@ If you hit rate limits, the tool automatically slows down. For large sites, the 
 For very large sites (1000+ posts), you may need to modify the code to process in batches.
 
 ### Claude API Errors
-Ensure your API key is valid and you have sufficient credits.
+Ensure your API key is valid and you have sufficient credits. Check the model name is correct for your account.
+
+### Sitemap Issues
+- Ensure `sitemap.xml` is accessible at the root of your site
+- For custom sitemap locations, specify the full URL: `--sitemap https://yoursite.com/custom-sitemap.xml`
+- The tool automatically handles nested sitemaps (sitemap index files)
 
 ## Example Use Cases
 
@@ -192,9 +264,11 @@ Use the report data to automatically create content briefs or update your conten
 ## Support
 
 For issues or questions:
-1. Check WordPress REST API is enabled: `https://yoursite.com/wp-json/`
-2. Verify Claude API key is active
-3. Ensure Python dependencies are installed correctly
+1. **REST API Mode**: Check WordPress REST API is enabled: `https://yoursite.com/wp-json/`
+2. **Sitemap Mode**: Verify sitemap is accessible: `https://yoursite.com/sitemap.xml`
+3. Verify Claude API key is active
+4. Ensure Python dependencies are installed correctly: `pip install -r requirements.txt`
+5. Use `--debug` flag for detailed logging: `python app.py ... --debug`
 
 ## License
 

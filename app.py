@@ -1,6 +1,7 @@
 """WordPress Query Fan-Out SEO Analyzer - Main entry point"""
 import logging
 from wordpress_fetcher import WordPressFetcher
+from sitemap_fetcher import SitemapFetcher
 from graph_builder import GraphBuilder
 from ai_analyzer import AIAnalyzer
 from content_analyzer import ContentAnalyzer
@@ -14,12 +15,19 @@ logger = logging.getLogger(__name__)
 class WordPressQueryFanOutAnalyzer:
     """Analyze WordPress sites for Google AI Mode query fan-out optimization"""
     
-    def __init__(self, site_url: str, claude_api_key: str, claude_model: str = "claude-sonnet-4-5"):
+    def __init__(self, site_url: str, claude_api_key: str, claude_model: str = "claude-sonnet-4-5", 
+                 use_sitemap: bool = False, sitemap_url: str = None):
         self.site_url = site_url.rstrip('/')
         logger.info(f"Initialized analyzer for {self.site_url}")
         
-        # Initialize components
-        self.fetcher = WordPressFetcher(self.site_url)
+        # Initialize fetcher based on mode
+        if use_sitemap:
+            logger.info(f"Using sitemap mode with sitemap: {sitemap_url or 'sitemap.xml'}")
+            self.fetcher = SitemapFetcher(self.site_url, sitemap_url)
+        else:
+            logger.info("Using WordPress REST API mode")
+            self.fetcher = WordPressFetcher(self.site_url)
+        
         self.graph_builder = GraphBuilder(self.site_url)
         self.ai_analyzer = AIAnalyzer(claude_api_key, claude_model)
         self.content_analyzer = ContentAnalyzer()
@@ -69,6 +77,8 @@ def main():
     parser.add_argument('--model', default='claude-sonnet-4-5', 
                        help='Claude model to use (default: claude-sonnet-4-5). Other options: claude-3-opus-20240229, claude-3-haiku-20240307, claude-3-5-haiku-20241022')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser.add_argument('--sitemap', type=str, nargs='?', const='sitemap.xml', 
+                       help='Use sitemap instead of REST API. Optionally specify sitemap URL (default: sitemap.xml)')
     
     args = parser.parse_args()
     
@@ -77,8 +87,13 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
         logger.setLevel(logging.DEBUG)
     
+    # Determine sitemap URL if sitemap mode is enabled
+    use_sitemap = args.sitemap is not None
+    sitemap_url = args.sitemap if use_sitemap else None
+    
     # Initialize analyzer
-    analyzer = WordPressQueryFanOutAnalyzer(args.site_url, args.claude_api_key, args.model)
+    analyzer = WordPressQueryFanOutAnalyzer(args.site_url, args.claude_api_key, args.model, 
+                                           use_sitemap=use_sitemap, sitemap_url=sitemap_url)
     
     # Generate report
     report = analyzer.generate_optimization_report()
