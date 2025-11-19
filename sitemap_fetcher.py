@@ -104,8 +104,63 @@ class SitemapFetcher:
                 response = self.session.get(url, timeout=30)
                 response.raise_for_status()
                 
+                # Check content type
+                content_type = response.headers.get('Content-Type', '').lower()
+                logger.debug(f"Response Content-Type: {content_type}")
+                logger.debug(f"Response status: {response.status_code}")
+                logger.debug(f"Response size: {len(response.content)} bytes")
+                
+                # Check if response is empty
+                if len(response.content) == 0:
+                    logger.error(f"Received empty response from {url}")
+                    return
+                
+                # Try to decode the content first
+                try:
+                    # Try UTF-8 first (requests should handle encoding automatically)
+                    xml_content = response.text
+                except (UnicodeDecodeError, AttributeError):
+                    # Fallback: decode manually
+                    try:
+                        xml_content = response.content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # Try with error handling
+                        xml_content = response.content.decode('utf-8', errors='ignore')
+                        logger.warning(f"Had to decode XML with error handling for {url}")
+                
+                # Remove BOM if present
+                if xml_content.startswith('\ufeff'):
+                    xml_content = xml_content[1:]
+                    logger.debug("Removed BOM from XML")
+                
+                # Check if response is actually XML (not HTML)
+                xml_content_stripped = xml_content.strip()
+                if xml_content_stripped.startswith('<!DOCTYPE') or xml_content_stripped.startswith('<html'):
+                    logger.error(f"Received HTML instead of XML from {url}")
+                    logger.error(f"This might be a 404 page, redirect, or the sitemap URL is incorrect.")
+                    logger.error(f"Response preview: {xml_content[:500]}")
+                    logger.error(f"Please verify the sitemap URL is correct: {url}")
+                    return
+                
+                # Check if it looks like XML
+                if not xml_content_stripped.startswith('<?xml') and not xml_content_stripped.startswith('<'):
+                    logger.error(f"Response doesn't appear to be XML from {url}")
+                    logger.error(f"Response preview: {xml_content[:500]}")
+                    return
+                
                 # Parse XML
-                root = ET.fromstring(response.content)
+                try:
+                    root = ET.fromstring(xml_content)
+                except ET.ParseError as parse_err:
+                    # Try to get more context about the error
+                    logger.error(f"XML parsing failed for {url}: {parse_err}")
+                    logger.error(f"Content type: {content_type}")
+                    logger.error(f"First 500 chars of response: {xml_content[:500]}")
+                    # Try to find the problematic line
+                    lines = xml_content.split('\n')
+                    if len(lines) > 0:
+                        logger.error(f"First line: {lines[0][:200]}")
+                    raise
                 
                 # Check if this is a sitemap index (contains nested sitemaps)
                 if root.tag.endswith('sitemapindex'):
@@ -136,8 +191,27 @@ class SitemapFetcher:
                     
             except ET.ParseError as e:
                 logger.error(f"Error parsing XML from {url}: {e}")
+                logger.error(f"Response content type: {response.headers.get('Content-Type', 'unknown')}")
+                logger.error(f"Response status code: {response.status_code}")
+                # Try to show what we actually received
+                try:
+                    preview = response.text[:500] if hasattr(response, 'text') else str(response.content[:500])
+                    logger.error(f"Response preview: {preview}")
+                except:
+                    logger.error(f"Response bytes preview: {response.content[:500]}")
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error fetching sitemap {url}: {e}")
+            except UnicodeDecodeError as e:
+                logger.error(f"Error decoding response from {url}: {e}")
+                logger.error(f"Trying alternative encoding methods...")
+                # Try with different encodings
+                try:
+                    xml_content = response.content.decode('latin-1')
+                    root = ET.fromstring(xml_content)
+                    # If successful, continue processing
+                    logger.info("Successfully decoded with latin-1 encoding")
+                except Exception as e2:
+                    logger.error(f"Failed to decode with alternative encoding: {e2}")
             except Exception as e:
                 logger.error(f"Unexpected error processing sitemap {url}: {e}", exc_info=True)
         
